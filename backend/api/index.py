@@ -620,15 +620,22 @@ def do_set_plan(conn, body):
     manager_id = body.get("manager_id")
     month_year = body.get("month_year")
     plan_amount = float(body.get("plan_amount", 0))
+    bonus_pct = float(body.get("bonus_pct", 0))
+    cities_deduct_pct = float(body.get("cities_deduct_pct", 50))
     if not all([manager_id, month_year]):
         return err("manager_id и month_year обязательны")
     with conn.cursor() as cur:
         cur.execute(
-            f"""INSERT INTO {SCHEMA}.manager_plans (manager_id, month_year, plan_amount)
-                VALUES (%s,%s,%s) ON CONFLICT (manager_id, month_year) DO UPDATE SET plan_amount=%s""",
-            (manager_id, month_year, plan_amount, plan_amount)
+            f"""INSERT INTO {SCHEMA}.manager_plans (manager_id, month_year, plan_amount, bonus_pct, cities_deduct_pct)
+                VALUES (%s,%s,%s,%s,%s)
+                ON CONFLICT (manager_id, month_year)
+                DO UPDATE SET plan_amount=%s, bonus_pct=%s, cities_deduct_pct=%s""",
+            (manager_id, month_year, plan_amount, bonus_pct, cities_deduct_pct,
+             plan_amount, bonus_pct, cities_deduct_pct)
         )
-        _notify(conn, manager_id, "plan_set", "План назначен", f"Ваш план на {month_year}: {plan_amount} ₽")
+        bonus_label = f"+{bonus_pct:.0f}%" if bonus_pct > 0 else "без премии"
+        _notify(conn, manager_id, "plan_set", "План назначен",
+                f"Ваш план на {month_year}: {plan_amount} ₽, мотивация {bonus_label}")
         conn.commit()
     return ok({"message": "План установлен"})
 
@@ -640,11 +647,10 @@ def do_get_plan(conn, body):
         return err("manager_id и month_year обязательны")
     with conn.cursor() as cur:
         cur.execute(
-            f"SELECT plan_amount FROM {SCHEMA}.manager_plans WHERE manager_id=%s AND month_year=%s",
+            f"SELECT plan_amount, bonus_pct, cities_deduct_pct FROM {SCHEMA}.manager_plans WHERE manager_id=%s AND month_year=%s",
             (manager_id, month_year)
         )
         row = cur.fetchone()
-        # Считаем фактическую комиссию за месяц
         cur.execute(
             f"""SELECT COALESCE(SUM(commission_amount),0) FROM {SCHEMA}.orders
                 WHERE manager_id=%s AND TO_CHAR(created_at,'YYYY-MM')=%s""",
@@ -652,8 +658,17 @@ def do_get_plan(conn, body):
         )
         fact_row = cur.fetchone()
     plan = float(row[0]) if row else 0
+    bonus_pct = float(row[1]) if row else 0
+    cities_deduct_pct = float(row[2]) if row else 50
     fact = float(fact_row[0]) if fact_row else 0
-    return ok({"plan": plan, "fact": fact, "remaining": max(0, plan - fact), "pct": round(fact / plan * 100, 1) if plan > 0 else 0})
+    return ok({
+        "plan": plan,
+        "fact": fact,
+        "remaining": max(0, plan - fact),
+        "pct": round(fact / plan * 100, 1) if plan > 0 else 0,
+        "bonus_pct": bonus_pct,
+        "cities_deduct_pct": cities_deduct_pct,
+    })
 
 
 def do_calculate_payout(conn, body):
@@ -662,24 +677,44 @@ def do_calculate_payout(conn, body):
     if not manager_id or not month_year:
         return err("manager_id и month_year обязательны")
     with conn.cursor() as cur:
+        # Суммарная предоплата за месяц (= баланс пополнений по заявкам)
         cur.execute(
             f"""SELECT COALESCE(SUM(commission_amount),0) FROM {SCHEMA}.orders
                 WHERE manager_id=%s AND TO_CHAR(created_at,'YYYY-MM')=%s""",
             (manager_id, month_year)
         )
         commission = float(cur.fetchone()[0])
-        cur.execute(f"SELECT plan_amount FROM {SCHEMA}.manager_plans WHERE manager_id=%s AND month_year=%s", (manager_id, month_year))
+        # План и настройки премии/городов
+        cur.execute(
+            f"SELECT plan_amount, bonus_pct, cities_deduct_pct FROM {SCHEMA}.manager_plans WHERE manager_id=%s AND month_year=%s",
+            (manager_id, month_year)
+        )
         plan_row = cur.fetchone()
         plan = float(plan_row[0]) if plan_row else 0
-        bonus = round(commission * 0.05, 2) if commission >= plan and plan > 0 else 0
+        bonus_pct = float(plan_row[1]) if plan_row else 0
+        cities_deduct_pct = float(plan_row[2]) if plan_row else 50
+        plan_met = commission >= plan and plan > 0
+        bonus = round(commission * bonus_pct / 100, 2) if plan_met else 0
+        # Стоимость городов за месяц
         cur.execute(
             f"""SELECT COALESCE(SUM(publish_cost),0) FROM {SCHEMA}.manager_cities
                 WHERE manager_id=%s AND TO_CHAR(created_at,'YYYY-MM')=%s""",
             (manager_id, month_year)
         )
-        cities_pay = float(cur.fetchone()[0])
-        total = round(commission + bonus + cities_pay, 2)
-    return ok({"commission": commission, "bonus": bonus, "cities_payment": cities_pay, "total": total, "plan_met": commission >= plan})
+        cities_total = float(cur.fetchone()[0])
+        # Из выплаты удерживается только 50% (или задан другой %) от стоимости городов
+        cities_deduct = round(cities_total * cities_deduct_pct / 100, 2)
+        total = round(commission + bonus - cities_deduct, 2)
+    return ok({
+        "commission": commission,
+        "bonus": bonus,
+        "bonus_pct": bonus_pct,
+        "cities_total": cities_total,
+        "cities_deduct_pct": cities_deduct_pct,
+        "cities_deduct": cities_deduct,
+        "total": total,
+        "plan_met": plan_met,
+    })
 
 
 def do_approve_payout(conn, body):

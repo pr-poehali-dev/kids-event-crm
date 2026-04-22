@@ -236,8 +236,10 @@ export function AdminManagerDetail({
   onNavigate: (s: string, extra?: Record<string, unknown>) => void;
 }) {
   const month = new Date().toISOString().slice(0, 7);
-  const [plan, setPlan] = useState({ plan: 0, fact: 0, remaining: 0, pct: 0 });
+  const [plan, setPlan] = useState({ plan: 0, fact: 0, remaining: 0, pct: 0, bonus_pct: 0, cities_deduct_pct: 50 });
   const [planInput, setPlanInput] = useState("");
+  const [bonusPct, setBonusPct] = useState("0");
+  const [citiesDeductPct, setCitiesDeductPct] = useState("50");
   const [payout, setPayout] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -246,13 +248,20 @@ export function AdminManagerDetail({
     api("get_plan", { manager_id: manager.id, month_year: month }).then((r) => {
       setPlan(r);
       setPlanInput(String(r.plan || ""));
+      setBonusPct(String(r.bonus_pct || "0"));
+      setCitiesDeductPct(String(r.cities_deduct_pct ?? "50"));
     }).catch(() => {});
   }, [manager.id]);
 
   const savePlan = async () => {
     setLoading(true);
     try {
-      await api("set_plan", { manager_id: manager.id, month_year: month, plan_amount: parseFloat(planInput) || 0 });
+      await api("set_plan", {
+        manager_id: manager.id, month_year: month,
+        plan_amount: parseFloat(planInput) || 0,
+        bonus_pct: parseFloat(bonusPct) || 0,
+        cities_deduct_pct: parseFloat(citiesDeductPct) ?? 50,
+      });
       setSaved(true); setTimeout(() => setSaved(false), 2000);
       api("get_plan", { manager_id: manager.id, month_year: month }).then(setPlan).catch(() => {});
     } finally {
@@ -311,21 +320,73 @@ export function AdminManagerDetail({
 
         {/* План */}
         <Card>
-          <p className="text-sm font-bold text-gray-800 mb-3">
+          <p className="text-sm font-bold text-gray-800 mb-4">
             План на {new Date().toLocaleString("ru-RU", { month: "long" })}
           </p>
-          <div className="flex gap-3 mb-3">
-            <input
-              type="number"
-              value={planInput}
-              onChange={(e) => setPlanInput(e.target.value)}
-              placeholder="Сумма плана"
-              className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300"
-            />
-            <OBtn onClick={savePlan} disabled={loading} size="sm">
-              {saved ? "✓" : "Сохранить"}
+
+          <div className="flex flex-col gap-3 mb-4">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400 font-medium">Сумма плана (₽)</label>
+              <input
+                type="number"
+                value={planInput}
+                onChange={(e) => setPlanInput(e.target.value)}
+                placeholder="0"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400 font-medium">Мотивация (% премии при выполнении)</label>
+              <div className="flex gap-2">
+                {["0", "10", "15", "20"].map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setBonusPct(p)}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all ${
+                      bonusPct === p
+                        ? "bg-orange-500 text-white border-orange-500"
+                        : "bg-gray-50 text-gray-600 border-gray-200"
+                    }`}
+                  >
+                    {p === "0" ? "Нет" : `+${p}%`}
+                  </button>
+                ))}
+              </div>
+              {bonusPct !== "0" && (
+                <p className="text-xs text-orange-500 mt-1">
+                  При выполнении плана менеджер получит +{bonusPct}% от суммы предоплат
+                </p>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-gray-400 font-medium">Удержание за города из выплаты (%)</label>
+              <div className="flex gap-2">
+                {["0", "50", "100"].map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setCitiesDeductPct(p)}
+                    className={`flex-1 py-2.5 rounded-xl text-sm font-bold border transition-all ${
+                      citiesDeductPct === p
+                        ? "bg-gray-800 text-white border-gray-800"
+                        : "bg-gray-50 text-gray-600 border-gray-200"
+                    }`}
+                  >
+                    {p}%
+                  </button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                100% стоимости городов спишется с баланса при публикации. Из выплаты — ещё {citiesDeductPct}%
+              </p>
+            </div>
+
+            <OBtn onClick={savePlan} disabled={loading} full>
+              {saved ? "✓ Сохранено" : "Сохранить план и мотивацию"}
             </OBtn>
           </div>
+
           <div className="flex justify-between text-sm mb-2">
             <span className="text-gray-500">Факт</span>
             <span className="font-bold text-green-500">{fmtMoney(plan.fact)}</span>
@@ -338,17 +399,37 @@ export function AdminManagerDetail({
 
         {/* Расчёт выплаты */}
         <Card>
-          <p className="text-sm font-bold text-gray-800 mb-3">Выплата</p>
+          <p className="text-sm font-bold text-gray-800 mb-3">Расчёт выплаты</p>
           <OBtn onClick={calculate} full variant="outline" size="sm">
             Рассчитать выплату
           </OBtn>
           {payout && (
             <div className="mt-4 flex flex-col gap-2">
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Комиссия (40%)</span><span className="font-medium">{fmtMoney(payout.commission as number)}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Премия (+5%)</span><span className={`font-medium ${payout.plan_met ? "text-green-500" : "text-gray-400"}`}>{payout.plan_met ? fmtMoney(payout.bonus as number) : "не выполнен"}</span></div>
-              <div className="flex justify-between text-sm"><span className="text-gray-500">Города</span><span className="font-medium">{fmtMoney(payout.cities_payment as number)}</span></div>
-              <div className="h-px bg-gray-100 my-1" />
-              <div className="flex justify-between"><span className="font-bold text-gray-700">Итого</span><span className="text-xl font-black text-gray-900">{fmtMoney(payout.total as number)}</span></div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Предоплаты за месяц</span>
+                <span className="font-medium">{fmtMoney(payout.commission as number)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className={`${payout.plan_met ? "text-green-600" : "text-gray-400"}`}>
+                  Мотивация {payout.plan_met ? `(+${payout.bonus_pct}%)` : "(план не выполнен)"}
+                </span>
+                <span className={`font-medium ${payout.plan_met ? "text-green-600" : "text-gray-400"}`}>
+                  {payout.plan_met ? `+${fmtMoney(payout.bonus as number)}` : "0 ₽"}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">
+                  Города: стоимость {fmtMoney(payout.cities_total as number)}, удержание {payout.cities_deduct_pct}%
+                </span>
+                <span className="font-medium text-red-500">−{fmtMoney(payout.cities_deduct as number)}</span>
+              </div>
+              <div className="h-px bg-gray-100 my-2" />
+              <div className="flex justify-between">
+                <span className="font-bold text-gray-700">К выплате</span>
+                <span className={`text-xl font-black ${(payout.total as number) < 0 ? "text-red-500" : "text-gray-900"}`}>
+                  {fmtMoney(payout.total as number)}
+                </span>
+              </div>
               <OBtn onClick={approvePayout} full disabled={loading} className="mt-2">
                 Утвердить выплату
               </OBtn>
