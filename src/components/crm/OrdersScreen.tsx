@@ -105,7 +105,7 @@ export function NewOrderForm({
     notes: "", birthday_info: "",
     total_cost: "", travel_cost: "", prepayment: "",
     client_phone: "", client_name: "", animator_name: "", animator_title: "",
-    commission_pct: "40", assistant_name: "",
+    commission_pct: "", assistant_name: "",
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -242,7 +242,7 @@ export function NewOrderForm({
             <Field label="Имя клиента" value={form.client_name} onChange={(v) => set("client_name", v)} />
             <Field label="Аниматор" value={form.animator_name} onChange={(v) => set("animator_name", v)} />
             <Field label="Название героя/аниматора" value={form.animator_title} onChange={(v) => set("animator_title", v)} />
-            <Field label="Комиссия (%)" type="number" value={form.commission_pct} onChange={(v) => set("commission_pct", v)} />
+            <Field label="Комиссия (₽)" type="number" placeholder="0" value={form.commission_pct} onChange={(v) => set("commission_pct", v)} hint="Введите сумму комиссии в рублях" />
             <Field label="Ассистент по чатам" value={form.assistant_name} onChange={(v) => set("assistant_name", v)} />
             <div className="flex flex-col gap-1.5">
               <label className="text-sm font-medium text-gray-600">Фото героя/программы</label>
