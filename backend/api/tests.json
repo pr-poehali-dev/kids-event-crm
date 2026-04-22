@@ -1,0 +1,21 @@
+{
+  "tests": [
+    {
+      "name": "Health check - get_managers (empty)",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "get_managers"},
+      "expectedStatus": 200,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Analytics default",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "get_analytics", "period": "month"},
+      "expectedStatus": 200,
+      "expectedBody": {"orders_count": 0},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
