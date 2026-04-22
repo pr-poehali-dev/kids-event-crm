@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import psycopg2
 
 SCHEMA = "t_p37278024_kids_event_crm"
+ADMIN_PHONE = "+79966266389"  # Номер администратора — роль назначается автоматически
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
@@ -131,6 +132,12 @@ def handler(event: dict, context) -> dict:
             return do_get_managers(conn)
         if action == "get_analytics":
             return do_get_analytics(conn, body)
+        if action == "get_manager_conversion":
+            return do_get_manager_conversion(conn, body)
+        if action == "get_admin_cities":
+            return do_get_admin_cities(conn)
+        if action == "save_city_config":
+            return do_save_city_config(conn, body)
 
         return err("Unknown action")
     finally:
@@ -146,17 +153,25 @@ def do_register(conn, body):
     messenger = body.get("messenger", "whatsapp")
     if not all([first, last, phone]):
         return err("Заполните все поля")
+    # Роль определяется автоматически по номеру
+    role = "admin" if phone == ADMIN_PHONE else "manager"
     with conn.cursor() as cur:
-        cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE phone = %s", (phone,))
-        if cur.fetchone():
+        cur.execute(f"SELECT id, role FROM {SCHEMA}.users WHERE phone = %s", (phone,))
+        existing = cur.fetchone()
+        if existing:
+            # Если это номер администратора — обновляем роль и возвращаем OK
+            if phone == ADMIN_PHONE:
+                cur.execute(f"UPDATE {SCHEMA}.users SET role='admin' WHERE phone=%s", (phone,))
+                conn.commit()
+                return ok({"user_id": existing[0], "message": "Аккаунт администратора подтверждён"})
             return err("Этот телефон уже зарегистрирован")
         cur.execute(
-            f"INSERT INTO {SCHEMA}.users (first_name, last_name, phone, messenger) VALUES (%s,%s,%s,%s) RETURNING id",
-            (first, last, phone, messenger)
+            f"INSERT INTO {SCHEMA}.users (first_name, last_name, phone, messenger, role) VALUES (%s,%s,%s,%s,%s) RETURNING id",
+            (first, last, phone, messenger, role)
         )
         user_id = cur.fetchone()[0]
         conn.commit()
-    return ok({"user_id": user_id, "message": "Аккаунт создан"})
+    return ok({"user_id": user_id, "message": "Аккаунт создан", "role": role})
 
 
 def do_request_otp(conn, body):
@@ -166,6 +181,14 @@ def do_request_otp(conn, body):
     with conn.cursor() as cur:
         cur.execute(f"SELECT id FROM {SCHEMA}.users WHERE phone = %s", (phone,))
         row = cur.fetchone()
+        # Номер администратора — авторегистрация при первом входе
+        if not row and phone == ADMIN_PHONE:
+            cur.execute(
+                f"INSERT INTO {SCHEMA}.users (first_name, last_name, phone, role) VALUES ('Администратор','Системы',%s,'admin') RETURNING id",
+                (phone,)
+            )
+            row = (cur.fetchone()[0],)
+            conn.commit()
         if not row:
             return err("Пользователь не найден")
         otp = "".join(random.choices(string.digits, k=6))
@@ -815,3 +838,51 @@ def do_get_analytics(conn, body):
         "conversion": conversion,
         "managers": managers
     })
+
+
+def do_get_manager_conversion(conn, body):
+    """Личная конверсия менеджера: заявки / запросы * 100%"""
+    manager_id = body.get("manager_id") or body.get("user_id")
+    if not manager_id:
+        return err("manager_id обязателен")
+    with conn.cursor() as cur:
+        cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.requests WHERE manager_id=%s", (manager_id,))
+        req_count = cur.fetchone()[0]
+        cur.execute(f"SELECT COUNT(*) FROM {SCHEMA}.orders WHERE manager_id=%s", (manager_id,))
+        ord_count = cur.fetchone()[0]
+    conversion = round(ord_count / req_count * 100, 1) if req_count > 0 else 0
+    return ok({"requests": req_count, "orders": ord_count, "conversion": conversion})
+
+
+def do_get_admin_cities(conn):
+    """Список всех 96 городов с настройками для администратора"""
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""SELECT city_name, publish_cost, target_kpd
+                FROM {SCHEMA}.manager_cities
+                WHERE id IN (
+                    SELECT MAX(id) FROM {SCHEMA}.manager_cities GROUP BY city_name
+                )
+                ORDER BY city_name"""
+        )
+        rows = cur.fetchall()
+    result = [{"city_name": r[0], "publish_cost": float(r[1]), "target_kpd": float(r[2])} for r in rows]
+    return ok(result)
+
+
+def do_save_city_config(conn, body):
+    """Сохранить настройки города (стоимость публикации и целевой КПД)"""
+    city_name = body.get("city_name", "").strip()
+    publish_cost = float(body.get("publish_cost", 270))
+    target_kpd = float(body.get("target_kpd", 10))
+    if not city_name:
+        return err("city_name обязателен")
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""UPDATE {SCHEMA}.manager_cities
+                SET publish_cost=%s, target_kpd=%s
+                WHERE city_name=%s""",
+            (publish_cost, target_kpd, city_name)
+        )
+        conn.commit()
+    return ok({"message": f"Настройки города {city_name} сохранены"})

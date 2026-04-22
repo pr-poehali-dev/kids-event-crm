@@ -18,6 +18,7 @@ import { SettingsScreen } from "@/components/crm/SettingsScreen";
 import {
   AdminAnalytics, AdminManagers, AdminManagerDetail,
   AdminCreateTransfer, AdminAllOrders,
+  AdminCitiesScreen, AdminSettingsScreen,
 } from "@/components/crm/AdminScreens";
 
 type Screen = string;
@@ -78,7 +79,6 @@ export default function Index() {
     "edit-order", "transfer-request", "city-requests",
     "requests-cities", "requests-active",
     "admin-manager-detail", "admin-create-transfer",
-    "admin-orders",
   ];
   const showNav = !noNavScreens.includes(screen);
 
@@ -88,6 +88,8 @@ export default function Index() {
     if (s.startsWith("admin-analytics")) return "admin-analytics";
     if (s.startsWith("admin-manager")) return "admin-managers";
     if (s.startsWith("admin-orders") || s.startsWith("admin-create-transfer")) return "admin-orders";
+    if (s.startsWith("admin-cities")) return "admin-cities";
+    if (s.startsWith("admin-settings")) return "admin-settings";
     if (s === "dashboard") return "dashboard";
     if (["requests", "requests-cities", "requests-active", "city-requests", "new-request"].includes(s)) return "requests";
     if (["orders", "new-order", "my-orders", "done-orders", "edit-order"].includes(s)) return "orders";
@@ -178,6 +180,12 @@ export default function Index() {
 
     if (screen === "admin-orders")
       return <AdminAllOrders user={user} onBack={goBack} />;
+
+    if (screen === "admin-cities")
+      return <AdminCitiesScreen user={user} />;
+
+    if (screen === "admin-settings")
+      return <AdminSettingsScreen user={user} onLogout={onLogout} />;
 
     return <div className="p-8 text-gray-400 text-center">Экран: {screen}</div>;
   };

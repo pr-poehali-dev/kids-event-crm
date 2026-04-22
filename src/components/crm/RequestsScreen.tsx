@@ -30,6 +30,16 @@ export function RequestsHub({
   user: Record<string, unknown>;
   onNavigate: (s: string) => void;
 }) {
+  const [conversion, setConversion] = useState<{ requests: number; orders: number; conversion: number } | null>(null);
+
+  useEffect(() => {
+    api("get_manager_conversion", { user_id: user.id })
+      .then(setConversion)
+      .catch(() => {});
+  }, [user.id]);
+
+  const convPct = conversion ? conversion.conversion : null;
+
   return (
     <div className="flex flex-col min-h-screen bg-white animate-fade-in">
       <TopBar title="Мои запросы" />
@@ -61,14 +71,24 @@ export function RequestsHub({
         </button>
 
         <Card className="bg-orange-50 border border-orange-100 mt-auto">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
-              <Icon name="TrendingUp" size={18} className="text-white" />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0">
+                <Icon name="TrendingUp" size={18} className="text-white" />
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Конверсия в заявку</p>
+                <p className="text-2xl font-black text-orange-500">
+                  {convPct === null ? "—" : `${convPct}%`}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-500">Конверсия в заявку</p>
-              <p className="text-2xl font-black text-orange-500">25%</p>
-            </div>
+            {conversion && (
+              <div className="text-right">
+                <p className="text-xs text-gray-400">Запросов: {conversion.requests}</p>
+                <p className="text-xs text-gray-400">Заявок: {conversion.orders}</p>
+              </div>
+            )}
           </div>
         </Card>
       </div>

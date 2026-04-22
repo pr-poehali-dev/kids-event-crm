@@ -70,26 +70,43 @@ export function AdminAnalytics({ user }: { user: Record<string, unknown> }) {
             </Card>
           </div>
 
-          {/* Конверсия */}
+          {/* Воронка */}
           <Card>
-            <p className="text-sm font-bold text-gray-800 mb-3">Воронка: Запросы → Заявки</p>
-            <div className="flex justify-between mb-2">
-              <span className="text-sm text-gray-500">Запросов</span>
-              <span className="text-sm font-bold text-gray-900">{data.requests_count as number}</span>
+            <p className="text-sm font-bold text-gray-800 mb-4">Воронка: Запросы → Заявки</p>
+            {/* Визуальная воронка */}
+            <div className="flex flex-col gap-2 mb-4">
+              <div className="bg-blue-50 rounded-xl px-4 py-3 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-blue-400" />
+                  <span className="text-sm text-gray-700">Всего запросов</span>
+                </div>
+                <span className="text-lg font-black text-blue-600">{data.requests_count as number}</span>
+              </div>
+              <div className="flex justify-center">
+                <Icon name="ChevronDown" size={16} className="text-gray-300" />
+              </div>
+              <div className="bg-orange-50 rounded-xl px-4 py-3 flex justify-between items-center">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-orange-400" />
+                  <span className="text-sm text-gray-700">Перешло в заявки</span>
+                </div>
+                <span className="text-lg font-black text-orange-600">{data.orders_count as number}</span>
+              </div>
             </div>
-            <div className="flex justify-between mb-3">
-              <span className="text-sm text-gray-500">Перешло в заявки</span>
-              <span className="text-sm font-bold text-gray-900">{data.orders_count as number}</span>
-            </div>
-            <div className="h-2.5 rounded-full bg-gray-100 overflow-hidden">
+            <div className="h-3 rounded-full bg-gray-100 overflow-hidden mb-2">
               <div
-                className="h-full bg-gradient-to-r from-orange-400 to-orange-500 rounded-full"
-                style={{ width: `${data.conversion as number}%` }}
+                className="h-full bg-gradient-to-r from-orange-400 to-orange-500 rounded-full transition-all"
+                style={{ width: `${Math.min(data.conversion as number, 100)}%` }}
               />
             </div>
-            <p className="text-right text-xs text-gray-500 mt-1">
-              Конверсия: <span className="font-bold text-orange-500">{data.conversion as number}%</span>
-            </p>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-gray-400">
+                {(data.requests_count as number) > 0 ? "Авторасчёт: заявки / запросы × 100%" : "Нет данных за период"}
+              </span>
+              <span className="text-base font-black text-orange-500">
+                {data.conversion as number}%
+              </span>
+            </div>
           </Card>
 
           {/* Города */}
@@ -521,6 +538,203 @@ export function AdminCreateTransfer({
         <OBtn onClick={submit} full disabled={loading || !form.amount}>
           {loading ? "Отправляем..." : "Отправить запрос"}
         </OBtn>
+      </div>
+    </div>
+  );
+}
+
+// ─── Города (для админа) ─────────────────────────────────────────────
+export function AdminCitiesScreen({
+  user,
+}: {
+  user: Record<string, unknown>;
+}) {
+  const [cities, setCities] = useState<Array<Record<string, unknown>>>([]);
+  const [search, setSearch] = useState("");
+  const [edited, setEdited] = useState<Record<string, { publish_cost: string; target_kpd: string }>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const [saved, setSaved] = useState<string | null>(null);
+
+  useEffect(() => {
+    api("get_cities", { is_admin: true }).then(setCities).catch(() => []);
+  }, []);
+
+  const filtered = cities.filter((c) =>
+    (c.city_name as string).toLowerCase().includes(search.toLowerCase())
+  );
+
+  const getVal = (city: string, key: "publish_cost" | "target_kpd", fallback: number) =>
+    edited[city]?.[key] ?? String(fallback);
+
+  const setVal = (city: string, key: "publish_cost" | "target_kpd", val: string) =>
+    setEdited((e) => ({ ...e, [city]: { ...e[city], [key]: val } }));
+
+  const save = async (city: string, publish_cost: number, target_kpd: number) => {
+    setSaving(city);
+    try {
+      await api("save_city_config", { city_name: city, publish_cost, target_kpd });
+      setSaved(city);
+      setTimeout(() => setSaved(null), 2000);
+    } finally {
+      setSaving(null);
+    }
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50 animate-fade-in">
+      <div className="bg-white">
+        <TopBar title="Города" right={<span className="text-xs text-gray-400">{cities.length} городов</span>} />
+        <div className="px-5 pb-4">
+          <div className="relative">
+            <Icon name="Search" size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Поиск города..."
+              className="w-full pl-10 pr-4 py-3 rounded-xl bg-gray-100 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-300"
+            />
+          </div>
+        </div>
+      </div>
+
+      {cities.length === 0 ? (
+        <div className="px-5 py-8 text-center text-gray-400 text-sm">
+          Города появятся здесь после того, как менеджеры начнут их публиковать
+        </div>
+      ) : (
+        <div className="px-5 py-4 flex flex-col gap-3 pb-28">
+          {filtered.map((c) => {
+            const cityName = c.city_name as string;
+            const cost = parseFloat(getVal(cityName, "publish_cost", c.publish_cost as number));
+            const kpd = parseFloat(getVal(cityName, "target_kpd", c.target_kpd as number));
+            return (
+              <Card key={cityName}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Icon name="MapPin" size={16} className="text-orange-500" />
+                  <p className="font-bold text-gray-900">{cityName}</p>
+                  {(c.kpd_pct as number) >= 100 ? (
+                    <span className="ml-auto text-xs font-bold text-green-500">+{(c.kpd_pct as number).toFixed(0)}%</span>
+                  ) : (
+                    <span className="ml-auto text-xs font-bold text-red-500">{(c.kpd_pct as number).toFixed(0)}%</span>
+                  )}
+                </div>
+                <div className="flex gap-3 mb-3">
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-400 mb-1">Стоимость публикации (₽)</p>
+                    <input
+                      type="number"
+                      value={getVal(cityName, "publish_cost", c.publish_cost as number)}
+                      onChange={(e) => setVal(cityName, "publish_cost", e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs text-gray-400 mb-1">Целевой КПД (×)</p>
+                    <input
+                      type="number"
+                      value={getVal(cityName, "target_kpd", c.target_kpd as number)}
+                      onChange={(e) => setVal(cityName, "target_kpd", e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300"
+                    />
+                  </div>
+                </div>
+                <button
+                  onClick={() => save(cityName, cost, kpd)}
+                  disabled={saving === cityName}
+                  className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${
+                    saved === cityName
+                      ? "bg-green-500 text-white"
+                      : "bg-orange-500 text-white active:scale-95"
+                  }`}
+                >
+                  {saved === cityName ? "✓ Сохранено" : saving === cityName ? "Сохраняем..." : "Сохранить"}
+                </button>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Настройки (для админа) ──────────────────────────────────────────
+export function AdminSettingsScreen({
+  user,
+  onLogout,
+}: {
+  user: Record<string, unknown>;
+  onLogout: () => void;
+}) {
+  const [notifSettings, setNotifSettings] = useState({
+    new_request: true,
+    order_created: true,
+    transfer_done: true,
+    payout_approved: true,
+    plan_set: true,
+  });
+
+  const toggleNotif = (key: string) =>
+    setNotifSettings((s) => ({ ...s, [key]: !s[key as keyof typeof s] }));
+
+  const notifLabels: Record<string, string> = {
+    new_request: "Новый запрос",
+    order_created: "Новая заявка",
+    transfer_done: "Перевод выполнен",
+    payout_approved: "Выплата утверждена",
+    plan_set: "Назначен план",
+  };
+
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50 animate-fade-in">
+      <div className="bg-white">
+        <TopBar title="Настройки" />
+      </div>
+
+      <div className="bg-white px-5 py-6 mb-3 flex items-center gap-4">
+        <div className="w-16 h-16 rounded-full bg-orange-100 flex items-center justify-center text-3xl">👑</div>
+        <div>
+          <p className="text-xl font-black text-gray-900">Администратор</p>
+          <p className="text-sm text-gray-500 mt-0.5">{user.phone as string}</p>
+        </div>
+      </div>
+
+      <div className="px-5 flex flex-col gap-4 pb-28">
+        <Card>
+          <p className="text-sm font-bold text-gray-800 mb-3">Уведомления</p>
+          <div className="flex flex-col gap-3">
+            {Object.entries(notifLabels).map(([key, label]) => (
+              <div key={key} className="flex items-center justify-between">
+                <span className="text-sm text-gray-700">{label}</span>
+                <button
+                  onClick={() => toggleNotif(key)}
+                  className={`w-12 h-6 rounded-full transition-colors relative ${
+                    notifSettings[key as keyof typeof notifSettings] ? "bg-orange-500" : "bg-gray-200"
+                  }`}
+                >
+                  <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${
+                    notifSettings[key as keyof typeof notifSettings] ? "right-0.5" : "left-0.5"
+                  }`} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <p className="text-sm font-bold text-gray-800 mb-1">Экспорт данных</p>
+          <p className="text-xs text-gray-400 mb-3">Выгрузка всех заявок в CSV</p>
+          <OBtn variant="outline" full size="sm">
+            Экспорт в Excel / CSV
+          </OBtn>
+        </Card>
+
+        <button
+          onClick={onLogout}
+          className="w-full py-4 rounded-2xl border-2 border-red-100 text-red-400 font-semibold text-sm active:bg-red-50 transition-colors"
+        >
+          Выйти из аккаунта
+        </button>
       </div>
     </div>
   );

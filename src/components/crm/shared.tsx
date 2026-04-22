@@ -182,7 +182,8 @@ export function BottomNav({
     { key: "admin-analytics", icon: "BarChart2", label: "Аналитика" },
     { key: "admin-managers", icon: "Users", label: "Менеджеры" },
     { key: "admin-orders", icon: "FileText", label: "Заявки" },
-    { key: "settings", icon: "Settings", label: "Профиль" },
+    { key: "admin-cities", icon: "MapPin", label: "Города" },
+    { key: "admin-settings", icon: "Settings", label: "Настройки" },
   ];
   const tabs = role === "admin" ? adminTabs : managerTabs;
   return (
