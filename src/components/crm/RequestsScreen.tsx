@@ -3,6 +3,25 @@ import { api, fmtDate } from "@/lib/api";
 import { TopBar, Card, Spinner, EmptyState, OBtn, Field } from "./shared";
 import Icon from "@/components/ui/icon";
 
+export const ALL_CITIES = [
+  "Абакан","Альметьевск","Ангарск","Архангельск","Астрахань","Барнаул","Батайск",
+  "Белгород","Бийск","Благовещенск","Брянск","Великий Новгород","Владивосток",
+  "Владикавказ","Владимир","Волгоград","Волгодонск","Волжский","Вологда","Воронеж",
+  "Димитровград","Екатеринбург","Златоуст","Иваново","Ижевск","Иркутск","Йошкар-Ола",
+  "Казань","Калининград","Калуга","Каменск-Уральский","Кемерово","Киров","Кисловодск",
+  "Коломна","Комсомольск-на-Амуре","Королёв","Кострома","Краснодар","Красногорск",
+  "Красноярск","Курган","Курск","Липецк","Магнитогорск","Майкоп","Махачкала","Москва",
+  "Мурманск","Набережные Челны","Нальчик","Нижневартовск","Нижнекамск","Нижний Новгород",
+  "Нижний Тагил","Новокузнецк","Новороссийск","Новосибирск","Новочеркасск","Норильск",
+  "Омск","Оренбург","Орёл","Орск","Пенза","Пермь","Петрозаводск","Псков",
+  "Ростов-на-Дону","Рубцовск","Рыбинск","Рязань","Самара","Санкт-Петербург","Саранск",
+  "Саратов","Севастополь","Симферополь","Смоленск","Сочи","Ставрополь","Старый Оскол",
+  "Стерлитамак","Сургут","Сыктывкар","Сызрань","Таганрог","Тамбов","Тверь","Тольятти",
+  "Томск","Тула","Тюмень","Улан-Удэ","Ульяновск","Уссурийск","Уфа","Хабаровск",
+  "Ханты-Мансийск","Чебоксары","Челябинск","Череповец","Чита","Шахты","Энгельс",
+  "Якутск","Ярославль",
+];
+
 // ─── Мои запросы (хаб) ─────────────────────────────────────────────
 export function RequestsHub({
   user,
@@ -72,20 +91,22 @@ export function RequestsCitiesList({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api("get_cities", { user_id: user.id })
-      .then((r: Array<{ city_name: string; id: number }>) => {
-        const names = r.map((c) => c.city_name);
-        api("get_requests", { user_id: user.id }).then((reqs: Array<{ city: string; is_read: boolean }>) => {
-          const map: Record<string, number> = {};
-          reqs.forEach((req) => {
-            if (!map[req.city]) map[req.city] = 0;
-            if (!req.is_read) map[req.city]++;
-          });
-          const all = Array.from(new Set([...names, ...Object.keys(map)])).sort();
-          setCities(all.map((c) => ({ city_name: c, unread: map[c] || 0 })));
-        }).catch(() => {});
+    api("get_requests", { user_id: user.id })
+      .then((reqs: Array<{ city: string; is_read: boolean }>) => {
+        const map: Record<string, number> = {};
+        reqs.forEach((req) => {
+          if (!map[req.city]) map[req.city] = 0;
+          if (!req.is_read) map[req.city]++;
+        });
+        // Объединяем полный список 96 городов с городами из запросов
+        const allNames = Array.from(new Set([...ALL_CITIES, ...Object.keys(map)])).sort((a, b) =>
+          a.localeCompare(b, "ru")
+        );
+        setCities(allNames.map((c) => ({ city_name: c, unread: map[c] || 0 })));
       })
-      .catch(() => {})
+      .catch(() => {
+        setCities(ALL_CITIES.map((c) => ({ city_name: c, unread: 0 })));
+      })
       .finally(() => setLoading(false));
   }, [user.id]);
 
@@ -109,8 +130,6 @@ export function RequestsCitiesList({
 
       {loading ? (
         <Spinner />
-      ) : filtered.length === 0 ? (
-        <EmptyState icon="MapPin" title="Нет городов" sub="Опубликуйте города, чтобы получать запросы" />
       ) : (
         <div className="flex flex-1">
           <div className="flex-1 px-5">
@@ -292,6 +311,11 @@ export function NewRequestForm({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [citySearch, setCitySearch] = useState(defaultCity || "");
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const citySuggestions = citySearch.length >= 1
+    ? ALL_CITIES.filter((c) => c.toLowerCase().includes(citySearch.toLowerCase())).slice(0, 8)
+    : [];
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -312,7 +336,39 @@ export function NewRequestForm({
     <div className="flex flex-col min-h-screen bg-white animate-fade-in">
       <TopBar title="Новый запрос" onBack={onBack} />
       <div className="px-5 py-5 flex flex-col gap-4 flex-1">
-        <Field label="Город" value={form.city} onChange={(v) => set("city", v)} />
+        {/* Город с автодополнением */}
+        <div className="flex flex-col gap-1.5 relative">
+          <label className="text-sm font-medium text-gray-600">Город</label>
+          <input
+            placeholder="Начните вводить..."
+            value={citySearch}
+            onChange={(e) => {
+              setCitySearch(e.target.value);
+              set("city", e.target.value);
+              setShowCityDropdown(true);
+            }}
+            onFocus={() => setShowCityDropdown(true)}
+            onBlur={() => setTimeout(() => setShowCityDropdown(false), 150)}
+            className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400 transition-all"
+          />
+          {showCityDropdown && citySuggestions.length > 0 && (
+            <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-xl shadow-card-hover mt-1 overflow-hidden">
+              {citySuggestions.map((c) => (
+                <button
+                  key={c}
+                  onMouseDown={() => {
+                    setCitySearch(c);
+                    set("city", c);
+                    setShowCityDropdown(false);
+                  }}
+                  className="w-full text-left px-4 py-3 text-sm text-gray-800 hover:bg-orange-50 border-b border-gray-100 last:border-0 font-medium"
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <Field label="Дата" type="date" value={form.event_date} onChange={(v) => set("event_date", v)} />
         <Field label="Время" type="time" value={form.event_time} onChange={(v) => set("event_time", v)} />
         <Field label="Программа" placeholder="Название программы" value={form.program} onChange={(v) => set("program", v)} />

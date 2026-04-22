@@ -332,7 +332,7 @@ def do_create_order(conn, body):
     if not uid:
         return err("user_id обязателен")
     prepayment = float(body.get("prepayment", 0))
-    commission = round(prepayment * 0.4, 2)
+    commission = round(prepayment, 2)  # На баланс зачисляется вся предоплата
     remainder = round(float(body.get("total_cost", 0)) - prepayment, 2)
     total_sum = round(float(body.get("total_cost", 0)) + float(body.get("travel_cost", 0)), 2)
     with conn.cursor() as cur:
@@ -356,13 +356,13 @@ def do_create_order(conn, body):
              body.get("commission_pct", 40), body.get("assistant_name"), body.get("hero_photo"), commission)
         )
         order_id = cur.fetchone()[0]
-        # Пополняем баланс на 40% от предоплаты
+        # Пополняем баланс на всю сумму предоплаты
         cur.execute(f"UPDATE {SCHEMA}.users SET balance = balance + %s WHERE id=%s", (commission, uid))
         cur.execute(
-            f"INSERT INTO {SCHEMA}.balance_transactions (manager_id, type, amount, description, reference_id) VALUES (%s,'order_commission',%s,%s,%s)",
-            (uid, commission, f"Комиссия по заявке #{order_id}", order_id)
+            f"INSERT INTO {SCHEMA}.balance_transactions (manager_id, type, amount, description, reference_id) VALUES (%s,'order_prepayment',%s,%s,%s)",
+            (uid, commission, f"Предоплата по заявке #{order_id}", order_id)
         )
-        _notify(conn, uid, "order_created", "Заявка создана", f"Баланс пополнен на {commission} ₽", order_id)
+        _notify(conn, uid, "order_created", "Заявка создана", f"Баланс пополнен на {commission} ₽ (предоплата)", order_id)
         conn.commit()
     return ok({"order_id": order_id, "commission": commission, "message": "Заявка создана"})
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, fmtMoney, fmtDate } from "@/lib/api";
 import { TopBar, Card, Spinner, EmptyState, OBtn, Field, Badge } from "./shared";
 import Icon from "@/components/ui/icon";
+import { ALL_CITIES } from "./RequestsScreen";
 
 // ─── Работа с заявками (хаб) ────────────────────────────────────────
 export function OrdersHub({
@@ -108,6 +109,11 @@ export function NewOrderForm({
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [citySearch, setCitySearch] = useState("");
+  const [showCityDrop, setShowCityDrop] = useState(false);
+  const citySuggestions = citySearch.length >= 1
+    ? ALL_CITIES.filter((c) => c.toLowerCase().includes(citySearch.toLowerCase())).slice(0, 8)
+    : [];
 
   const set = (k: string, v: string) => setForm((f) => ({ ...f, [k]: v }));
   const num = (k: string) => parseFloat(form[k] || "0") || 0;
@@ -158,7 +164,39 @@ export function NewOrderForm({
         <Section title="Адрес">
           <div className="flex flex-col gap-4">
             <Field label="Область" value={form.address_region} onChange={(v) => set("address_region", v)} />
-            <Field label="Город / нас. пункт" value={form.address_city} onChange={(v) => set("address_city", v)} />
+            {/* Город с автодополнением */}
+            <div className="flex flex-col gap-1.5 relative">
+              <label className="text-sm font-medium text-gray-600">Город / нас. пункт</label>
+              <input
+                placeholder="Начните вводить..."
+                value={citySearch || form.address_city}
+                onChange={(e) => {
+                  setCitySearch(e.target.value);
+                  set("address_city", e.target.value);
+                  setShowCityDrop(true);
+                }}
+                onFocus={() => setShowCityDrop(true)}
+                onBlur={() => setTimeout(() => setShowCityDrop(false), 150)}
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-900 placeholder-gray-400 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-400 transition-all"
+              />
+              {showCityDrop && citySuggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-200 rounded-xl shadow-card-hover mt-1 overflow-hidden">
+                  {citySuggestions.map((c) => (
+                    <button
+                      key={c}
+                      onMouseDown={() => {
+                        setCitySearch(c);
+                        set("address_city", c);
+                        setShowCityDrop(false);
+                      }}
+                      className="w-full text-left px-4 py-3 text-sm text-gray-800 hover:bg-orange-50 border-b border-gray-100 last:border-0 font-medium"
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <Field label="Улица" value={form.address_street} onChange={(v) => set("address_street", v)} />
             <Field label="Дом" value={form.address_house} onChange={(v) => set("address_house", v)} />
           </div>
@@ -191,8 +229,8 @@ export function NewOrderForm({
               <span className="text-sm font-bold text-orange-600">{fmtMoney(remainder)}</span>
             </div>
             <div className="flex justify-between bg-green-50 rounded-xl px-4 py-3">
-              <span className="text-sm text-gray-500">Комиссия 40%</span>
-              <span className="text-sm font-bold text-green-600">{fmtMoney(num("prepayment") * 0.4)}</span>
+              <span className="text-sm text-gray-500">На баланс (вся предоплата)</span>
+              <span className="text-sm font-bold text-green-600">{fmtMoney(num("prepayment"))}</span>
             </div>
           </div>
         </Section>
